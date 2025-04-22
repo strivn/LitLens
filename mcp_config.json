@@ -1,0 +1,13 @@
+{
+    "mcpServers": {
+        "litlens": {
+            "command": "/Users/ivw/.local/bin/uv",
+            "args": [
+                "--directory",
+                "/Users/ivw/Workspace/Programming_Projects/litlens/litlens",
+                "run",
+                "main.py"
+            ]
+        }
+    }
+}

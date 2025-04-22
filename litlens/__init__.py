@@ -1,0 +1,1 @@
+"""LitLens: Academic paper search and retrieval tool."""
