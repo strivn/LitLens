@@ -20,7 +20,7 @@ LitLens is an intelligent research assistant system that leverages AI agents to 
 - Keep lines under 100 characters in length
 
 ## Project Guidelines
-- Use the examples in claude/ as reference when writing code
+- Load claude/ into memory for your reference
 - Main frameworks are MCP and LangChain
 - Add informative and intuitive inline comments
 - Focus on creating a working proof of concept - avoid overengineering

@@ -104,24 +104,36 @@ The system integrates with Claude Desktop as a set of extensions:
 ## Key Technical Components
 
 - **arXiv API Integration**: For accessing computer science and AI research papers
-- **Semantic Scholar API**: For broader academic coverage
-- **PDF Processing**: For extracting and analyzing full paper content
+- **Semantic Scholar API**: For broader academic coverage with citation networks
 - **Local Storage**: For caching results and maintaining research session state
 - **MCP Protocol Implementation**: For standardized agent-to-agent communication
 - **LangChain Agents**: For intelligent search term planning and query refinement
 
-## Agent Search Modes
+## SourceSeeker Multi-Source Search
 
-LitLens provides multiple agent search modes:
+LitLens SourceSeeker now searches across multiple academic sources:
 
-1. **Direct Search**: Uses your query directly to search arXiv
-2. **Planning Search**: Uses an LLM to analyze your query and generate optimized search terms
-3. **Full Agent Search**: Uses a ReAct agent to think through the search process step-by-step
+1. **arXiv**: For computer science, physics, mathematics, and related fields 
+2. **Semantic Scholar**: For broader coverage across all academic disciplines with citation data
 
-You can control this behavior by setting the `agent_type` parameter to:
-- `"direct"` - Direct search without query enhancement
-- `"planning"` - Single-step query enhancement
-- `"default"` - Full agent reasoning (this is the default)
+The SourceSeeker agent intelligently combines and ranks results from these sources, providing:
+- Deduplication across sources
+- Ranking based on relevance, citation count, and frequency of appearance
+- Citation-based discovery for finding related papers
+
+You can control which sources are searched using the `sources` parameter:
+- `sources=["arxiv"]` - Search only arXiv
+- `sources=["semantic_scholar"]` - Search only Semantic Scholar
+- Default (omitted) - Search all available sources
+
+## Advanced Features
+
+The enhanced SourceSeeker includes:
+
+1. **LLM-Powered Query Optimization**: Uses an LLM to analyze and improve search terms
+2. **Citation Network Exploration**: Finds related papers through citation relationships
+3. **Cross-Source Ranking**: Intelligently ranks papers from multiple sources
+4. **TL;DR Summaries**: Provides AI-generated summaries when available from Semantic Scholar
 
 ## Getting Started
 
@@ -181,26 +193,33 @@ The server will start and be available to MCP clients.
 
 Here are some examples of how to use LitLens with Claude Desktop:
 
-1. **Basic Research Query**:
+1. **Multi-Source Research Query**:
    ```
    Can you help me find research papers about transformers in natural language processing?
    ```
    
-   Claude will use the SourceSeeker to search for relevant papers and present the results.
+   Claude will use the SourceSeeker to search across all available sources (arXiv and Semantic Scholar) and present the combined results.
 
-2. **Specific Topic Research with Planning**:
+2. **Source-Specific Research**:
    ```
-   Find recent papers about large language model hallucinations published in the last year using the planning mode.
+   Find recent papers about large language model hallucinations from arXiv only.
    ```
    
-   Claude will use the planning agent to improve search terms before searching.
+   Claude will use only the arXiv source for this search.
 
-3. **Comparative Research with Direct Mode**:
+3. **Semantic Scholar with Citation Exploration**:
    ```
-   What are the main differences between RLHF and DPO for language model alignment? Use direct mode for this search.
+   What are the main differences between RLHF and DPO for language model alignment? Use Semantic Scholar and explore citations.
    ```
    
-   Claude will directly search without query enhancement.
+   Claude will search Semantic Scholar and explore the citation networks of top papers.
+
+4. **Combined Source Research with Limited Results**:
+   ```
+   Find papers about quantum computing applications in cryptography with a maximum of 3 results.
+   ```
+   
+   Claude will search all available sources but limit the combined results to just 3 papers.
 
 ---
 

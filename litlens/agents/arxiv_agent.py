@@ -169,6 +169,25 @@ def create_arxiv_agent(llm: Optional[BaseLanguageModel] = None) -> AgentExecutor
            - Make sure to search using different perspectives/aspects of the topic
         3. Combine and analyze the results to provide the most comprehensive coverage of the topic
         
+        CRITICAL FORMAT INSTRUCTIONS:
+        - Your final answer MUST be structured as a highly concise summary followed by a simple, numbered list of papers
+        - LIMIT your response to a brief 1-2 sentence summary followed by listing at most 5 papers
+        - Format each paper with only: title, authors, and 1-2 sentence summary
+        - Do NOT include lengthy explanations or analysis
+        - Do NOT include URLs or links
+        - Be extremely brief and concise
+        
+        Example good format for your final answer:
+        "Here are the most relevant papers on quantum computing. 
+        1. 'Quantum Computing Applications' by Smith et al. A survey of practical applications in cryptography.
+        2. 'Quantum Algorithms' by Jones et al. Focuses on algorithm complexity improvements."
+        
+        BAD examples to avoid:
+        - Do not write long summaries for each paper
+        - Do not include detailed explanations of concepts
+        - Do not include URLs or references to arXiv
+        - Do not write lengthy introduction or conclusion sections
+        
         Use the following format:
         Question: the input question you must answer
         Thought: you should always think about what to do
@@ -177,7 +196,7 @@ def create_arxiv_agent(llm: Optional[BaseLanguageModel] = None) -> AgentExecutor
         Observation: the result of the action
         ... (this Thought/Action/Action Input/Observation can repeat N times)
         Thought: I now know the final answer
-        Final Answer: the final answer to the original input question, including a list of the most relevant papers found
+        Final Answer: a concise 1-2 sentence summary followed by a simple numbered list of the most relevant papers
         
         Human: {input}
         
@@ -196,7 +215,8 @@ def create_arxiv_agent(llm: Optional[BaseLanguageModel] = None) -> AgentExecutor
         tools=tools,
         verbose=False,  # Set to True during development to see the agent's reasoning
         return_intermediate_steps=True,
-        max_iterations=5  # Allow enough iterations for multiple searches
+        max_iterations=5,  # Allow enough iterations for multiple searches
+        handle_parsing_errors=True  # Handle parsing errors gracefully
     )
 
     return agent_executor
@@ -247,17 +267,19 @@ def deduplicate_results(all_results: List[Dict]) -> List[Dict]:
 
 def execute_arxiv_search(
     query: str,
-    max_docs: int = 5,
-    agent_type: str = None,  # This parameter is kept for backward compatibility but is ignored
-    model_name: Optional[str] = None
+    max_docs: int = 10,
+    agent_type: str = None,  # Support direct mode for fallback search
+    model_name: Optional[str] = None,
+    year_filter: Optional[int] = None
 ) -> Union[Dict[str, Any], Dict[str, List[Dict]]]:
-    """Execute an arXiv search using the ReAct agent.
+    """Execute an arXiv search using the ReAct agent or direct search.
 
     Args:
         query: The search query
         max_docs: Maximum number of documents to return per search term
-        agent_type: Parameter kept for backward compatibility (ignored)
+        agent_type: Search mode - "direct" for fast direct search or any other value for full agent
         model_name: Optional override for the LLM model name
+        year_filter: Optional minimum year to filter papers by (for recency filtering)
 
     Returns:
         Dictionary containing search results and additional info
@@ -266,7 +288,12 @@ def execute_arxiv_search(
         return {"error": "Query parameter is required"}
 
     try:
-        # Always use the ReAct agent with both tools
+        # Check for direct search mode (fast fallback option)
+        if agent_type == "direct":
+            # Direct search without optimization - fastest option
+            return _execute_direct_arxiv_search(query, max_docs, year_filter)
+            
+        # Full agent mode (default)
         llm = get_llm(model_name)
         agent_executor = create_arxiv_agent(llm)
         result = agent_executor.invoke({"input": query})
@@ -333,3 +360,61 @@ def execute_arxiv_search(
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+def _execute_direct_arxiv_search(query: str, max_docs: int = 10, year_filter: Optional[int] = None) -> Dict[str, Any]:
+    """Execute a direct arXiv search without agent optimization - fast mode.
+    
+    This is used as a fallback when the full search times out.
+    """
+    try:
+        # Create retriever with minimal options for speed
+        retriever = ArxivRetriever(
+            top_k_results=max_docs,
+            load_max_docs=max_docs,
+            doc_content_chars_max=4000
+        )
+        
+        # Get documents directly
+        docs = retriever.get_relevant_documents(query)
+        
+        # Format results
+        results = []
+        for doc in docs:
+            # Extract year if available
+            year = None
+            published = doc.metadata.get("Published", "")
+            if published:
+                import re
+                year_match = re.search(r'\b(19|20)\d{2}\b', published)
+                if year_match:
+                    year = int(year_match.group(0))
+            
+            # Apply year filter if specified
+            if year_filter is not None and year is not None and year < year_filter:
+                # Skip papers that don't meet the year filter
+                continue
+                
+            paper = {
+                "title": doc.metadata.get("Title", ""),
+                "authors": doc.metadata.get("Authors", ""),
+                "summary": doc.metadata.get("Summary", ""),
+                "published": published,
+                "url": f"https://arxiv.org/abs/{doc.metadata.get('Entry_ID', '').split('/')[-1]}",
+                "content": doc.page_content
+            }
+            
+            # Add year if we found it
+            if year:
+                paper["year"] = year
+                
+            results.append(paper)
+            
+        return {
+            "search_queries": [query],
+            "results": results,
+            "source": "arxiv",
+            "search_mode": "direct"
+        }
+    except Exception as e:
+        return {"error": f"Direct arXiv search failed: {str(e)}"}
