@@ -7,14 +7,19 @@ import asyncio
 import threading
 import concurrent.futures
 import re
+import json
+import uuid
+import time
 from datetime import datetime
 import hashlib
 from typing import Dict, List, Optional, Union, Any, Tuple
+from pathlib import Path
 from dotenv import load_dotenv
 
 from mcp.server.fastmcp import FastMCP
 
 from agents.source_seeker_agent import execute_source_seeker_search
+from agents.insight_weaver import synthesize_papers
 
 # Load environment variables from .env file
 load_dotenv()
@@ -22,6 +27,47 @@ load_dotenv()
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("litlens")
+
+# Create logs directory if it doesn't exist
+logs_dir = Path(__file__).parent.parent / "logs"
+logs_dir.mkdir(exist_ok=True)
+source_seeker_logs_dir = logs_dir / "source_seeker"
+source_seeker_logs_dir.mkdir(exist_ok=True)
+insight_weaver_logs_dir = logs_dir / "insight_weaver"
+insight_weaver_logs_dir.mkdir(exist_ok=True)
+
+def log_to_file(data: Dict[str, Any], agent_type: str):
+    """Log data to a file with UUID and timestamp in the logs directory.
+    
+    Args:
+        data: The data to log
+        agent_type: The type of agent (source_seeker or insight_weaver)
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_id = str(uuid.uuid4())[:8]
+    
+    if agent_type.lower() == "source_seeker":
+        log_dir = source_seeker_logs_dir
+    elif agent_type.lower() == "insight_weaver":
+        log_dir = insight_weaver_logs_dir
+    else:
+        log_dir = logs_dir
+    
+    log_path = log_dir / f"{timestamp}_{agent_type}_{log_id}.json"
+    
+    # Add timestamp and request_id to data
+    data["_meta"] = {
+        "timestamp": timestamp,
+        "request_id": log_id,
+        "agent_type": agent_type
+    }
+    
+    try:
+        with open(log_path, 'w') as f:
+            json.dump(data, f, indent=2, default=str)
+        logger.info(f"Logged {agent_type} data to {log_path}")
+    except Exception as e:
+        logger.error(f"Error logging to file: {str(e)}")
 
 # Create an MCP server
 mcp = FastMCP("LitLens")
@@ -32,39 +78,97 @@ executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 # Create a lock for thread safety with asyncio operations
 loop_lock = threading.Lock()
 
-def analyze_query_constraints(query: str) -> Tuple[Optional[int], bool]:
+def analyze_query_constraints(query: str) -> Tuple[Optional[int], bool, Optional[List[str]]]:
     """
-    Analyze query to extract temporal constraints and detect if it's about field evolution.
+    Analyze query to extract temporal constraints, field evolution indicators, and technical domains.
     
     Args:
         query: The search query
         
     Returns:
-        Tuple of (year_filter, is_field_evolution_query)
+        Tuple of (year_filter, is_field_evolution_query, technical_domains)
     """
     query_lower = query.lower()
     year_filter = None
     is_field_evolution = False
+    technical_domains = []
+    
+    # Detect technical domains
+    # This is a basic pattern matching - could be enhanced with a more sophisticated approach
+    technical_domain_patterns = {
+        "cryptography": ["cryptography", "encryption", "cipher", "lattice-based", "rlwe", "post-quantum", "homomorphic"],
+        "machine_learning": ["deep learning", "neural network", "reinforcement learning", "transformer", "attention mechanism"],
+        "quantum_computing": ["quantum", "qubit", "entanglement", "superposition", "shor", "grover"],
+        "distributed_systems": ["distributed", "consensus", "blockchain", "byzantine", "peer-to-peer"],
+        "computer_vision": ["computer vision", "image processing", "object detection", "segmentation", "cnn"],
+        "nlp": ["natural language processing", "nlp", "language model", "sentiment analysis", "translation"]
+    }
+    
+    for domain, keywords in technical_domain_patterns.items():
+        if any(keyword in query_lower for keyword in keywords):
+            technical_domains.append(domain)
+    
+    # Check for sub-topic filtering
+    subtopic_match = re.search(r'(?:focus(?:ing|ed)? on|only|specifically about|limited to)\s+([^.?!]+)', query_lower)
+    if subtopic_match:
+        subtopic = subtopic_match.group(1).strip()
+        if subtopic and len(subtopic) > 3:  # Ensure it's a meaningful subtopic
+            technical_domains.append(f"subtopic:{subtopic}")
     
     # Check for explicit time periods
     explicit_year_match = re.search(r'(\d{4})\s*(-|to)\s*(\d{4}|\bpresent\b)', query_lower)
     if explicit_year_match:
         start_year = int(explicit_year_match.group(1))
-        return start_year, is_field_evolution
+        return start_year, is_field_evolution, technical_domains
     
-    # Check for "last X years"
-    last_years_match = re.search(r'last\s+(\d+)\s+years', query_lower)
+    # Check for "last X years/months"
+    last_years_match = re.search(r'last\s+(\d+)\s+(years?|months?)', query_lower)
     if last_years_match:
-        years_back = int(last_years_match.group(1))
+        time_value = int(last_years_match.group(1))
+        time_unit = last_years_match.group(2)
+        
         current_year = datetime.now().year
-        year_filter = current_year - years_back
-        return year_filter, is_field_evolution
+        if 'month' in time_unit:
+            # Convert months to fractional years for simplicity
+            years_back = time_value / 12
+            if years_back < 0.5:  # If less than 6 months, use just the current year
+                year_filter = current_year
+            else:
+                year_filter = current_year - int(years_back)
+        else:
+            year_filter = current_year - time_value
+            
+        return year_filter, is_field_evolution, technical_domains
     
-    # Check for "recent" mentions
-    recent_terms = ['recent', 'latest', 'new', 'current', 'modern', 'last few years', 'state of the art', 'state-of-the-art', 'cutting edge']
-    if any(term in query_lower for term in recent_terms):
+    # Check for "recent" mentions - improved to prioritize more recent papers
+    recent_terms = {
+        'very recent': 1,  # Last year
+        'latest': 1,       # Last year
+        'newest': 1,       # Last year
+        'current': 1,      # Last year
+        'cutting edge': 1, # Last year
+        'recent': 2,       # Last 2 years
+        'new': 2,          # Last 2 years
+        'modern': 3,       # Last 3 years
+        'state of the art': 2, # Last 2 years
+        'state-of-the-art': 2, # Last 2 years
+        'last few years': 3    # Last 3 years
+    }
+    
+    # Find the most restrictive (smallest) year filter based on terms
+    year_span = 3  # Default
+    for term, span in recent_terms.items():
+        if term in query_lower and span < year_span:
+            year_span = span
+    
+    if year_span < 3:  # If we found a more restrictive term
         current_year = datetime.now().year
-        year_filter = current_year - 3  # Default to last 3 years for "recent"
+        year_filter = current_year - year_span
+    
+    # For papers in the last 6-12 months check
+    if "last 6 months" in query_lower or "past 6 months" in query_lower:
+        current_year = datetime.now().year
+        year_filter = current_year  # Only papers from current year
     
     # Check if query is about field evolution
     evolution_terms = ['evolution', 'history', 'development', 'progress', 'advance', 'change', 'trend', 'timeline', 'over time', 'journey', 'milestone']
@@ -73,151 +177,278 @@ def analyze_query_constraints(query: str) -> Tuple[Optional[int], bool]:
         # For field evolution, we don't want to restrict by year
         year_filter = None
     
-    return year_filter, is_field_evolution
+    return year_filter, is_field_evolution, technical_domains
 
-@mcp.tool("SourceSeeker")
-def search_academic_sources(
-    query: str, 
-    max_docs: int = 10,
+@mcp.tool("LitLens")
+def research_and_synthesize(
+    query: str,
+    max_docs: int = 20,  # Increased from 10 to 20
     sources: List[str] = None,
+    synthesis_type: str = "comprehensive",
+    max_length: int = 1500,  # Increased from 1000 to 1500
     model_name: Optional[str] = None,
-    timeout_seconds: int = 30
-) -> Union[Dict[str, Any], Dict[str, List[Dict]]]:
-    """Find and analyze academic research papers from multiple scholarly sources.
+    timeout_seconds: int = 120  # Doubled from 60 to 120 for more processing time
+) -> Dict[str, Any]:
+    """Find, analyze, and synthesize academic research to answer questions.
+    
+    This tool performs end-to-end academic research:
+    1. Searches multiple academic sources for relevant papers
+    2. Analyzes individual papers and their relationships
+    3. Synthesizes findings into a coherent answer
+    4. Critically evaluates the quality and limitations of its synthesis
     
     Use this tool when:
-    - The user is specifically asking to find academic papers or research
-    - The user wants to explore scientific literature on a technical topic
-    - The query is clearly about academic or scholarly research
-    - The question involves technical concepts that would benefit from academic research insights
+    - The user is asking an academic research question
+    - The user wants a comprehensive literature review on a topic
+    - The query requires synthesizing information from multiple sources
+    - The user wants expert analysis of current research
     
     Examples of good queries:
-    - "Find papers about transformer architectures in NLP"
-    - "What are recent developments in quantum computing algorithms?"
-    - "Research on blockchain consensus mechanisms"
-    - "Find academic papers about climate modeling techniques"
+    - "What are the current approaches to zero-shot learning?"
+    - "How has transformer architecture evolved since the original paper?"
+    - "What's the evidence for and against using meditation for anxiety?"
+    - "Compare different methods for hydrogen storage in fuel cells"
     
     Do NOT use this tool:
-    - For general information requests where scientific papers aren't specifically requested
-    - For non-academic queries or general knowledge questions
-    - For broad topics without technical specificity (e.g., "blockchain trends")
+    - For simple factual questions that don't require research synthesis
+    - For non-academic topics or general knowledge questions
+    - When the user wants just a list of papers without synthesis
     - For questions better answered by general knowledge
     
-    IMPORTANT USAGE GUIDANCE:
-    - Pass the user's raw query exactly as entered (e.g., "what are recent developments in ViT?")
-    - Do NOT attempt to extract keywords or reformulate the query
-    - The system will automatically convert natural language questions into optimized search terms
-    - Passing the complete question gives the internal LLMs more context for generating better search terms
-    - The system handles question-style queries just as well as keyword queries
-    
     Args:
-        query: The user's raw search query or question, passed exactly as entered.
-        max_docs: Maximum number of documents to return (default: 10).
-        sources: List of sources to search. Options: "arxiv", "semantic_scholar". 
-                 If not provided, searches all available sources.
+        query: The user's research question or topic.
+        max_docs: Maximum number of papers to retrieve and analyze (default: 10).
+        sources: List of sources to search. Options: "arxiv", "semantic_scholar".
+        synthesis_type: Type of synthesis to generate (options: "comprehensive", "concise", "comparative").
+        max_length: Maximum length of synthesis in words (default: 1500).
         model_name: Optional override for the LLM model name.
-        timeout_seconds: Maximum time in seconds to wait for results (default: 30).
+        timeout_seconds: Maximum time in seconds to wait for results (default: 120).
     """
-    # Analyze query for temporal constraints and field evolution
-    year_filter, is_field_evolution = analyze_query_constraints(query)
+    # Create a request ID for logging
+    request_id = str(uuid.uuid4())
     
-    logger.info(f"SourceSeeker executing search with query: '{query}', max_docs: {max_docs}, sources: {sources}, timeout: {timeout_seconds}s, year_filter: {year_filter}, field_evolution: {is_field_evolution}")
+    # Log the request
+    logger.info(f"LitLens processing query: '{query}', synthesis_type: {synthesis_type}, request_id: {request_id}")
     
-    # For storing partial results in case of timeout
-    partial_results = {
+    # Analyze query for technical domains and time constraints
+    year_filter, is_field_evolution, technical_domains = analyze_query_constraints(query)
+    
+    # Log query analysis
+    log_data = {
+        "request_id": request_id,
         "query": query,
-        "sources_requested": sources if sources else ["arxiv", "semantic_scholar"],
-        "sources_completed": [],
-        "combined_results": [],
-        "status": "initiated",
         "year_filter": year_filter,
-        "is_field_evolution": is_field_evolution
+        "is_field_evolution": is_field_evolution,
+        "technical_domains": technical_domains,
+        "max_docs": max_docs,
+        "synthesis_type": synthesis_type
     }
+    log_to_file(log_data, "litlens_request")
     
-    # Use a simpler approach with a global executor
+    # Phase 1: SourceSeeker - allocate 60% of timeout for search, 40% for synthesis
+    search_timeout = int(timeout_seconds * 0.6)
+    start_time = time.time()
+    
     try:
-        # Create a future for our search
-        search_future = executor.submit(
+        # Internal implementation of SourceSeeker
+        # Extract technical domain terms to enhance search
+        domain_terms = []
+        for domain in technical_domains:
+            if domain.startswith("subtopic:"):
+                domain_terms.append(domain[9:])  # Extract subtopic term
+        
+        # Enhance query with technical domain terms if applicable
+        enhanced_query = query
+        if domain_terms:
+            # Add technical terms in parentheses to ensure they're included in search
+            technical_terms = " ".join(domain_terms)
+            if technical_terms not in query:
+                enhanced_query = f"{query} ({technical_terms})"
+        
+        # Direct call to internal function instead of the SourceSeeker tool
+        source_seeker_partial_results = {
+            "query": enhanced_query,
+            "sources_requested": sources if sources else ["arxiv", "semantic_scholar"],
+            "sources_completed": [],
+            "combined_results": [],
+            "status": "initiated",
+            "year_filter": year_filter,
+            "is_field_evolution": is_field_evolution,
+            "technical_domains": technical_domains
+        }
+        
+        source_seeker_future = executor.submit(
             _run_source_seeker_in_thread,
-            query=query,
+            query=enhanced_query,
             max_docs=max_docs,
             sources=sources,
             model_name=model_name,
-            partial_results=partial_results,
+            partial_results=source_seeker_partial_results,
             year_filter=year_filter,
-            is_field_evolution=is_field_evolution
+            is_field_evolution=is_field_evolution,
+            request_id=request_id
         )
         
-        # Wait for the result with a timeout
+        # Wait for result with timeout
         try:
-            results = search_future.result(timeout=timeout_seconds)
-            logger.info(f"SourceSeeker completed within timeout of {timeout_seconds}s")
-            # Return simplified results for client, but keep full data internally
-            return validate_and_format_response(results, simplify_for_client=True)
-        except concurrent.futures.TimeoutError:
-            # If we timeout, cancel the future if possible and return partial results
-            logger.warning(f"SourceSeeker timed out after {timeout_seconds}s, returning partial results")
-            search_future.cancel()
-            
-            # Update status
-            partial_results["status"] = "timeout"
-            partial_results["message"] = f"Search timed out after {timeout_seconds} seconds"
-            
-            # If we have at least some results, it's better than nothing
-            if len(partial_results["combined_results"]) > 0:
-                logger.info(f"Returning {len(partial_results['combined_results'])} partial results")
-                # Validate and simplify partial results before returning
-                validated_partial = validate_and_format_response(partial_results, simplify_for_client=True)
-                return validated_partial
+            source_seeker_results = source_seeker_future.result(timeout=search_timeout)
+            if isinstance(source_seeker_results, dict) and "combined_results" in source_seeker_results:
+                papers = source_seeker_results["combined_results"]
             else:
-                # Otherwise, try a fallback to just arxiv which may be faster
-                logger.info("No partial results available, trying fast fallback to arXiv")
-                try:
-                    from agents.arxiv_agent import execute_arxiv_search
-                    fallback_results = execute_arxiv_search(
-                        query=query,
-                        max_docs=max_docs,
-                        model_name=model_name,
-                        agent_type="direct",  # Use direct mode for speed
-                        year_filter=year_filter  # Pass the year filter to the fallback
-                    )
-                    
-                    # Format as a partial result
-                    if "results" in fallback_results and len(fallback_results["results"]) > 0:
-                        partial_results["combined_results"] = fallback_results["results"]
-                        partial_results["sources_completed"] = ["arxiv_direct"]
-                        partial_results["message"] += ". Fallback to direct arXiv search successful."
-                        
-                        # Validate and simplify the fallback results
-                        validated_results = validate_and_format_response(partial_results, simplify_for_client=True)
-                        return validated_results
-                    else:
-                        # If no results, provide a helpful message
-                        error_response = {
-                            "query": query,
-                            "status": "no_results",
-                            "message": f"Search timed out after {timeout_seconds} seconds and no relevant papers were found. Try modifying your search terms.",
-                            "combined_results": []
-                        }
-                        return validate_and_format_response(error_response, simplify_for_client=True)
-                except Exception as fallback_error:
-                    logger.error(f"Fallback search failed: {str(fallback_error)}")
-                    error_response = {
-                        "error": f"Search timed out after {timeout_seconds} seconds and fallback search failed: {str(fallback_error)}",
-                        "query": query,
-                        "status": "error",
-                        "results": []
-                    }
-                    return validate_and_format_response(error_response, simplify_for_client=True)
+                papers = []
+                
+            source_seeker_time = time.time() - start_time
+            logger.info(f"SourceSeeker completed in {source_seeker_time:.2f}s, found {len(papers)} papers")
+            
+            # Log SourceSeeker results
+            source_seeker_log = {
+                "request_id": request_id,
+                "query": query,
+                "enhanced_query": enhanced_query,
+                "year_filter": year_filter,
+                "is_field_evolution": is_field_evolution,
+                "technical_domains": technical_domains,
+                "paper_count": len(papers),
+                "execution_time": source_seeker_time,
+                "papers": papers
+            }
+            log_to_file(source_seeker_log, "source_seeker")
+            
+        except concurrent.futures.TimeoutError:
+            logger.warning(f"SourceSeeker timed out after {search_timeout}s")
+            source_seeker_future.cancel()
+            
+            # Use whatever partial results we have
+            papers = source_seeker_partial_results["combined_results"]
+            source_seeker_results = {
+                "status": "timeout",
+                "message": f"Search timed out after {search_timeout} seconds",
+                "combined_results": papers,
+                "sources_completed": source_seeker_partial_results["sources_completed"]
+            }
+            
+            # Log timeout
+            log_to_file({
+                "request_id": request_id,
+                "status": "timeout",
+                "partial_papers": len(papers),
+                "execution_time": search_timeout
+            }, "source_seeker")
+        
+        # Skip synthesis if no papers found
+        if not papers:
+            no_results_response = {
+                "query": query,
+                "papers": [],
+                "synthesis": "No relevant papers were found for this query.",
+                "evaluation": "Unable to provide analysis due to lack of relevant academic sources."
+            }
+            log_to_file({**no_results_response, "request_id": request_id}, "insight_weaver")
+            return no_results_response
+        
+        # Phase 2: InsightWeaver - Calculate remaining time for synthesis
+        remaining_time = timeout_seconds - (time.time() - start_time)
+        if remaining_time < 20:  # Ensure at least 20 seconds for synthesis (increased from 10)
+            remaining_time = 20
+            
+        synthesis_start_time = time.time()
+        
+        # Create future for synthesis with timeout
+        synthesis_future = executor.submit(
+            synthesize_papers,
+            papers=papers,
+            query=query,
+            synthesis_type=synthesis_type,
+            max_length=max_length,
+            model_name=model_name
+        )
+        
+        try:
+            synthesis_result = synthesis_future.result(timeout=remaining_time)
+            synthesis_time = time.time() - synthesis_start_time
+            
+            # Log InsightWeaver results
+            insight_log = {
+                "request_id": request_id,
+                "query": query,
+                "paper_count": len(papers),
+                "synthesis_type": synthesis_type,
+                "execution_time": synthesis_time,
+                "query_intent": synthesis_result.get("query_intent", {}),
+                "synthesis_length": len(synthesis_result.get("synthesis", "")),
+                "evaluation_length": len(synthesis_result.get("evaluation", ""))
+            }
+            log_to_file(insight_log, "insight_weaver")
+            
+            # Combine everything into final response with both papers and synthesis
+            result = {
+                "query": query,
+                "papers": papers,
+                "synthesis": synthesis_result.get("synthesis", ""),
+                "evaluation": synthesis_result.get("evaluation", ""),
+                "metadata": {
+                    "sources_searched": source_seeker_results.get("sources_searched", []),
+                    "sources_completed": source_seeker_results.get("sources_completed", []),
+                    "paper_count": len(papers),
+                    "synthesis_type": synthesis_type,
+                    "query_intent": synthesis_result.get("query_intent", {}),
+                    "technical_domains": technical_domains,
+                    "total_execution_time": time.time() - start_time
+                }
+            }
+            
+            # Log final result metadata
+            log_to_file({
+                "request_id": request_id,
+                "total_time": time.time() - start_time,
+                "status": "completed",
+                "paper_count": len(papers)
+            }, "litlens_response")
+            
+            return result
+            
+        except concurrent.futures.TimeoutError:
+            synthesis_future.cancel()
+            
+            # If synthesis times out, return papers with a message
+            timeout_result = {
+                "query": query,
+                "papers": papers,
+                "synthesis": "The synthesis process timed out. Here are the relevant papers we found.",
+                "evaluation": "Unable to complete synthesis within the time limit.",
+                "metadata": {
+                    "sources_searched": source_seeker_results.get("sources_searched", []),
+                    "sources_completed": source_seeker_results.get("sources_completed", []),
+                    "paper_count": len(papers),
+                    "status": "synthesis_timeout"
+                }
+            }
+            
+            log_to_file({
+                "request_id": request_id,
+                "status": "synthesis_timeout",
+                "paper_count": len(papers)
+            }, "insight_weaver")
+            
+            return timeout_result
+    
     except Exception as e:
-        logger.error(f"SourceSeeker error: {str(e)}")
-        error_response = {
+        logger.error(f"Error in research_and_synthesize: {str(e)}")
+        
+        # Log the error
+        log_to_file({
+            "request_id": request_id,
             "error": str(e),
-            "query": query,
-            "status": "error",
-            "results": []
+            "traceback": str(e.__traceback__)
+        }, "litlens_error")
+        
+        return {
+            "error": f"An error occurred while processing your research query: {str(e)}",
+            "query": query
         }
-        return validate_and_format_response(error_response, simplify_for_client=True)
+
+# SourceSeeker tool has been removed as a standalone tool.
+# All functionality is now integrated into the unified LitLens tool above.
 
 
 def validate_and_format_response(results: Dict[str, Any], simplify_for_client: bool = False) -> Dict[str, Any]:
@@ -399,7 +630,8 @@ def _run_source_seeker_in_thread(
     model_name: Optional[str],
     partial_results: Dict,
     year_filter: Optional[int] = None,
-    is_field_evolution: bool = False
+    is_field_evolution: bool = False,
+    request_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Run the SourceSeeker search in a separate thread with proper asyncio handling."""
     # Create a new event loop for this thread

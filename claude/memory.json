@@ -13,6 +13,7 @@
     ],
     "external_apis": [
       "arXiv API",
+      "Semantic Scholar API",
       "OpenAI API"
     ],
     "python_packages": [
@@ -25,7 +26,8 @@
       "python-dotenv",
       "langchain-openai",
       "dotenv",
-      "pytest"
+      "pytest",
+      "semanticscholar"
     ]
   },
   "architecture": {
@@ -33,12 +35,14 @@
       {
         "name": "SourceSeeker",
         "type": "Retriever Agent",
-        "responsibility": "Find and initially evaluate relevant research papers",
+        "responsibility": "Find and initially evaluate relevant research papers from multiple sources",
         "process": [
           "Analyzes query to identify key concepts and search terms",
-          "Searches multiple academic sources (currently only arXiv)",
+          "Searches multiple academic sources (arXiv, Semantic Scholar)",
+          "Explores citation networks to find related papers",
           "Performs initial relevance assessment based on abstracts and metadata",
-          "Ranks and filters papers by relevance score"
+          "Deduplicates results across sources",
+          "Ranks and filters papers by relevance score, citation count, and frequency"
         ],
         "status": "Implemented"
       },
@@ -69,7 +73,7 @@
     "communication_flow": [
       "User submits research query to Claude",
       "Claude formats query for SourceSeeker agent using MCP",
-      "SourceSeeker searches and returns relevant papers",
+      "SourceSeeker searches across multiple sources and returns relevant papers",
       "Claude passes papers to InsightWeaver agent (future)",
       "InsightWeaver performs analysis and produces synthesis (future)",
       "Claude presents findings to user in conversational format"
@@ -86,44 +90,48 @@
     ],
     "search_optimization": {
       "multiple_search_terms": "Uses LLM to generate alternative search queries",
-      "deduplication": "Combines and deduplicates results from multiple searches",
-      "ranking": "Ranks results by frequency of appearance and position"
+      "deduplication": "Combines and deduplicates results from multiple searches and sources",
+      "ranking": "Ranks results by frequency of appearance, position, and citation count",
+      "citation_exploration": "Explores citation networks to find related papers"
     },
     "mcp_integration": {
       "server": "FastMCP server exposing tools for Claude Desktop integration",
       "tools": [
         {
-          "name": "search_arxiv",
-          "description": "Search arXiv for academic papers when user wants to find scientific publications",
-          "parameters": ["query", "max_docs", "model_name"]
+          "name": "SourceSeeker",
+          "description": "Find and analyze academic research papers from multiple scholarly sources",
+          "parameters": ["query", "max_docs", "sources", "model_name"]
         }
       ]
     }
   },
   "file_summaries": {
     "README.md": "Project overview documenting the dual-agent architecture, components, and communication flow. Includes installation instructions and usage examples.",
-    "pyproject.toml": "Project configuration specifying Python dependencies including httpx, langchain, mcp, arxiv, and OpenAI integration.",
-    "litlens/main.py": "MCP server implementation that exposes the search_arxiv tool and serves as the entry point for the application.",
+    "pyproject.toml": "Project configuration specifying Python dependencies including httpx, langchain, mcp, arxiv, semanticscholar, and OpenAI integration.",
+    "litlens/main.py": "MCP server implementation that exposes academic search tools and serves as the entry point for the application.",
     "litlens/agents/arxiv_agent.py": "Implementation of the arXiv search agent with multiple search optimization strategies, including query planning and result deduplication.",
+    "litlens/agents/semantic_scholar_agent.py": "Implementation of the Semantic Scholar search agent with citation exploration capabilities.",
+    "litlens/agents/source_seeker_agent.py": "Combined agent that searches across multiple sources and integrates results with intelligent ranking and deduplication.",
     "mcp_config.json": "Configuration for the MCP server that allows Claude Desktop to connect to the LitLens application.",
     "claude/server_example.py": "Example MCP server implementation demonstrating MCP functionality with a SQLite database.",
     ".env.example": "Template for environment variables including OpenAI API key and model configuration."
   },
   "current_state": {
     "implemented_features": [
-      "arXiv search capability through MCP",
-      "LLM-powered search term optimization",
-      "Result deduplication and ranking",
+      "Multi-source academic search capability through MCP",
+      "arXiv search with LLM-powered search term optimization",
+      "Semantic Scholar search with citation exploration",
+      "Cross-source result deduplication and ranking",
       "Claude Desktop integration"
     ],
     "planned_features": [
       "InsightWeaver agent for deep analysis",
-      "Additional academic sources beyond arXiv",
+      "Additional academic sources beyond arXiv and Semantic Scholar",
       "PDF processing for full paper content",
-      "Semantic Scholar API integration"
+      "Advanced citation network analysis"
     ],
     "limitations": [
-      "Currently only supports arXiv as a data source",
+      "Currently only supports arXiv and Semantic Scholar as data sources",
       "Synthesis capabilities not yet implemented",
       "Limited error handling (acceptable for proof of concept)"
     ]

@@ -1,5 +1,11 @@
 # LitLens: AI-Powered Research Assistant
 
+
+## Disclaimer
+All of the code and documentation in this repository was generated with Claude Code assistance. 
+They have not been throughly vetted. 
+
+
 ## Overview
 
 LitLens is an intelligent research assistant system that leverages AI agents to help users efficiently find, analyze, and synthesize academic research. The system employs a multi-agent architecture with specialized components that work together to provide comprehensive research assistance with minimal user intervention.
@@ -18,7 +24,7 @@ LitLens addresses these challenges by creating a specialized agent system that c
 
 ## System Architecture
 
-LitLens uses a dual-agent architecture that communicates through the Model Context Protocol (MCP):
+LitLens uses a multi-agent architecture that communicates through the Model Context Protocol (MCP):
 
 ## Why We Use Specialized Agents
 
@@ -54,7 +60,9 @@ The SourceSeeker specializes in finding and initially evaluating relevant resear
 
 - **Input**: User's research query
 - **Process**:
-  - Analyzes query to identify key concepts and search terms
+  - Analyzes query to identify key concepts, search terms, and constraints
+  - Detects technical domains to improve search relevance
+  - Extracts temporal constraints for better year filtering
   - Searches multiple academic sources (arXiv, Semantic Scholar, etc.)
   - Performs initial relevance assessment based on abstracts and metadata
   - Ranks and filters papers by relevance score
@@ -71,9 +79,11 @@ The InsightWeaver performs deep analysis of papers identified by the SourceSeeke
   - Groups papers by subtopic and research approach
   - Identifies agreements, contradictions, and trends across papers
   - Extracts key methodologies and findings
+  - Adopts an academic researcher persona for rigorous analysis
   - Organizes information into a coherent synthesis
-- **Output**: Comprehensive synthesis of research findings
-- **Key Value**: Transforms disparate information into cohesive knowledge, identifying patterns that would be missed when reading papers in isolation
+  - Identifies the most important papers with rationale for recommendations
+- **Output**: Comprehensive synthesis of research findings with specific paper recommendations
+- **Key Value**: Transforms disparate information into cohesive knowledge, identifying patterns that would be missed when reading papers in isolation, and providing guidance on which papers deserve priority attention
 
 ### 3. Orchestrator
 
@@ -95,11 +105,12 @@ The system integrates with Claude Desktop as a set of extensions:
 ## Communication Flow
 
 1. User submits a research query to Claude
-2. Claude formats the query for the SourceSeeker agent using MCP
-3. SourceSeeker searches and returns relevant papers
-4. Claude passes these papers to the InsightWeaver agent
-5. InsightWeaver performs deep analysis and produces a synthesis
-6. Claude presents findings to the user in a conversational format
+2. Claude formats the query for the LitLens system using MCP
+3. LitLens analyzes the query to extract constraints, domains, and subtopics
+4. SourceSeeker component searches and returns relevant papers
+5. InsightWeaver component performs deep analysis and produces a synthesis with recommendations
+6. The system logs the entire transaction with a unique identifier
+7. Claude presents findings to the user in a conversational format
 
 ## Key Technical Components
 
@@ -108,6 +119,10 @@ The system integrates with Claude Desktop as a set of extensions:
 - **Local Storage**: For caching results and maintaining research session state
 - **MCP Protocol Implementation**: For standardized agent-to-agent communication
 - **LangChain Agents**: For intelligent search term planning and query refinement
+- **Structured Logging System**: JSON logs with UUIDs and timestamps for tracking all transactions
+- **Technical Domain Patterns**: Pattern matching for specialized academic fields to improve search relevance
+- **Query Intent Analysis**: Extraction of constraints, domains, and subtopics from natural language
+- **Async/Await Framework**: Proper event loop management with ThreadPoolExecutor for concurrent tasks
 
 ## SourceSeeker Multi-Source Search
 
@@ -128,12 +143,31 @@ You can control which sources are searched using the `sources` parameter:
 
 ## Advanced Features
 
-The enhanced SourceSeeker includes:
+LitLens includes the following advanced capabilities:
+
+### Intelligent Search and Analysis
 
 1. **LLM-Powered Query Optimization**: Uses an LLM to analyze and improve search terms
 2. **Citation Network Exploration**: Finds related papers through citation relationships
 3. **Cross-Source Ranking**: Intelligently ranks papers from multiple sources
 4. **TL;DR Summaries**: Provides AI-generated summaries when available from Semantic Scholar
+5. **Technical Domain Detection**: Automatically identifies specialized academic fields (e.g., cryptography, machine learning) to improve search relevance
+6. **Year Filtering**: Enhanced handling of temporal constraints for accessing recent research in fast-moving fields
+7. **Subtopic Extraction**: Ability to filter by specific sub-topics within broader research domains
+
+### InsightWeaver Synthesis
+
+1. **Academic Researcher Persona**: Adopts the rigorous standards and writing style of a professional researcher when synthesizing information
+2. **Paper Recommendations**: Identifies the 3-5 most important papers that researchers should prioritize based on technical innovation, methodological rigor, and influence
+3. **Pattern Recognition**: Identifies agreements, contradictions, and research trends across multiple papers
+4. **Methodological Analysis**: Extracts and compares key methodologies and approaches used across papers
+
+### System Features
+
+1. **Comprehensive Logging**: Structured JSON logs with timestamps and UUIDs for tracking all requests and responses
+2. **Unified Tool Interface**: Consolidated interface through the LitLens tool while preserving internal separation of concerns
+3. **Asynchronous Processing**: Uses async/await patterns with proper event loop management for responsive performance
+4. **Concurrent Task Management**: Employs ThreadPoolExecutor with timeouts to prevent hanging during paper processing
 
 ## Getting Started
 
@@ -187,39 +221,62 @@ The server will start and be available to MCP clients.
 1. In Claude Desktop, go to Settings > Tools
 2. Click "Add MCP Config File" and select the `mcp_config.json` file from this repository
 3. Start the server using the command above
-4. The LitLens Academic Search tool will be available to Claude
+4. The LitLens research assistant tool will be available to Claude
+
+### Logging and Debugging
+
+LitLens includes a comprehensive logging system that captures all transactions:
+
+1. **Log Structure**: Each request generates a timestamped JSON log with a unique UUID
+2. **Log Location**: Logs are stored in the `/logs` directory with subdirectories for each component
+3. **Log Content**: Logs include the original query, detected constraints, papers found, and synthesis results
+4. **Debugging**: When troubleshooting, check the logs to see exactly how queries were processed
 
 ## Usage Examples
 
 Here are some examples of how to use LitLens with Claude Desktop:
 
-1. **Multi-Source Research Query**:
+1. **Multi-Source Research Query with Synthesis**:
    ```
-   Can you help me find research papers about transformers in natural language processing?
+   Can you help me find and synthesize research papers about transformers in natural language processing?
    ```
    
-   Claude will use the SourceSeeker to search across all available sources (arXiv and Semantic Scholar) and present the combined results.
+   Claude will use LitLens to search across all available sources (arXiv and Semantic Scholar), analyze the papers, and provide a comprehensive synthesis with paper recommendations.
 
-2. **Source-Specific Research**:
+2. **Source-Specific Research with Year Filtering**:
    ```
-   Find recent papers about large language model hallucinations from arXiv only.
+   Find papers about large language model hallucinations published since 2022 from arXiv only.
    ```
    
-   Claude will use only the arXiv source for this search.
+   Claude will use only the arXiv source for this search and apply temporal filtering to focus on recent research.
 
-3. **Semantic Scholar with Citation Exploration**:
+3. **Technical Domain-Specific Research**:
    ```
-   What are the main differences between RLHF and DPO for language model alignment? Use Semantic Scholar and explore citations.
+   What are the main differences between RLHF and DPO for language model alignment? Focus on machine learning papers that explore both approaches.
    ```
    
-   Claude will search Semantic Scholar and explore the citation networks of top papers.
+   LitLens will detect the technical domain (machine learning) and focus the search on papers comparing these alignment techniques.
 
-4. **Combined Source Research with Limited Results**:
+4. **Research with Subtopic Filtering**:
    ```
-   Find papers about quantum computing applications in cryptography with a maximum of 3 results.
+   Find papers about quantum computing applications in post-quantum cryptography with a focus on lattice-based approaches.
    ```
    
-   Claude will search all available sources but limit the combined results to just 3 papers.
+   LitLens will detect the technical domain (cryptography), the general topic (quantum computing), and the specific subtopic (lattice-based approaches) to provide highly relevant results.
+
+5. **Request for Paper Recommendations**:
+   ```
+   What are the most important papers I should read about diffusion models in computer vision?
+   ```
+   
+   LitLens will not only search for papers but will provide specific recommendations of the most important papers with explanations of why each is significant.
+
+6. **Access to Recent Research in Fast-Moving Field**:
+   ```
+   What are the latest developments in multimodal large language models in the last 6 months?
+   ```
+   
+   LitLens will detect the temporal constraint and focus on very recent papers in this rapidly evolving field.
 
 ---
 
