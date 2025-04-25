@@ -2,14 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Build/Run Commands
-- Run main app: `python -m litlens.main`
-- Run example MCP server: `python claude/server_example.py`
+## Basic overview and direction
+LitLens is an intelligent research assistant system that leverages AI agents to help users efficiently find, analyze, and synthesize academic research. The system employs a multi-agent architecture with specialized components that work together to provide comprehensive research to be provided through the Model Context Protocol (MCP) and is currently designed for use with Claude Desktop.
 
-## Development Commands
-- Install dependencies: `pip install -e .` or `uv pip install -e .`
-- Run linting: `ruff check .`
-- Run type checking: `mypy .`
+
+## Build/Run Commands
+- Run main app: `uv run litlens/main.py`
+- Run example MCP server: `python claude/server_example.py`
+- We are mainly using `uv`
+- You may need to source `.venv/bin/activate` first 
 
 ## Style Guidelines
 - Follow PEP 8 standards for code formatting
@@ -26,3 +27,5 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Minimal error handling is acceptable at this stage
 - Verify code by running it to catch runtime errors
 - No need for test code at this stage
+- Make sure to try running the code when finished coding, and see if there are any errors that need to be fixed. Cancel after 10s because it's a running app, this means there's no errors
+- Do not assume libraries APIs, read the library directly from the environment or use web search for guidance

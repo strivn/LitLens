@@ -108,22 +108,20 @@ The system integrates with Claude Desktop as a set of extensions:
 - **PDF Processing**: For extracting and analyzing full paper content
 - **Local Storage**: For caching results and maintaining research session state
 - **MCP Protocol Implementation**: For standardized agent-to-agent communication
+- **LangChain Agents**: For intelligent search term planning and query refinement
 
-## Benefits
+## Agent Search Modes
 
-- **Context Efficiency**: Handles more papers than would fit in a single LLM context window
-- **Specialized Processing**: Each agent optimized for its specific task
-- **Comprehensive Analysis**: Identifies patterns across multiple sources
-- **Time Savings**: Automates the most time-consuming aspects of literature review
-- **Improved Research Quality**: Reduces the chance of missing important papers or connections
+LitLens provides multiple agent search modes:
 
-## Future Extensions
+1. **Direct Search**: Uses your query directly to search arXiv
+2. **Planning Search**: Uses an LLM to analyze your query and generate optimized search terms
+3. **Full Agent Search**: Uses a ReAct agent to think through the search process step-by-step
 
-- Add support for more academic databases and repositories
-- Implement citation graph analysis for identifying seminal papers
-- Create domain-specific tuning for different research fields
-- Add collaborative features for team research
-- Implement long-term research memory across sessions
+You can control this behavior by setting the `agent_type` parameter to:
+- `"direct"` - Direct search without query enhancement
+- `"planning"` - Single-step query enhancement
+- `"default"` - Full agent reasoning (this is the default)
 
 ## Getting Started
 
@@ -157,6 +155,12 @@ The system integrates with Claude Desktop as a set of extensions:
    uv pip install ruff mypy
    ```
 
+5. Configure your environment:
+   ```bash
+   cp .env.example .env
+   # Edit .env to add your OpenAI API key
+   ```
+
 ### Running the Server
 
 Start the MCP server:
@@ -164,7 +168,7 @@ Start the MCP server:
 python -m litlens.main
 ```
 
-The server will start on `http://0.0.0.0:8000` by default.
+The server will start and be available to MCP clients.
 
 ### Connecting with Claude Desktop
 
@@ -184,19 +188,19 @@ Here are some examples of how to use LitLens with Claude Desktop:
    
    Claude will use the SourceSeeker to search for relevant papers and present the results.
 
-2. **Specific Topic Research**:
+2. **Specific Topic Research with Planning**:
    ```
-   Find recent papers about large language model hallucinations published in the last year.
+   Find recent papers about large language model hallucinations published in the last year using the planning mode.
    ```
    
-   Claude will search for papers on the specific topic with the date constraint.
+   Claude will use the planning agent to improve search terms before searching.
 
-3. **Comparative Research**:
+3. **Comparative Research with Direct Mode**:
    ```
-   What are the main differences between RLHF and DPO for language model alignment?
+   What are the main differences between RLHF and DPO for language model alignment? Use direct mode for this search.
    ```
    
-   Claude will find papers about both techniques and synthesize the key differences.
+   Claude will directly search without query enhancement.
 
 ---
 

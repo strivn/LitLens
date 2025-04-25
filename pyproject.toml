@@ -11,4 +11,12 @@ dependencies = [
     "mcp[cli]>=1.6.0",
     "uvicorn>=0.29.0",
     "arxiv>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "langchain-openai>=0.0.5",
+    "dotenv>=0.9.9",
+    "pytest>=8.3.5",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
