@@ -90,6 +90,6 @@ LitLens includes a logging system that captures all transactions:
 
 ## See More
 1. For detailed agent descriptions, see [Agent Role Descriptions](docs/agent_role_descriptions.md)
-2. For sample interaction transcripts including agentic AI risks research, see [Sample Interaction Transcript](docs/sample_interaction_transcript.md)
+2. For sample interaction transcripts, see [Sample Interaction Transcript](docs/sample_interaction_transcript.md)
 3. For detailed output format examples and message flows, see [Output Summary](docs/output_summary.md)
 4. For a comprehensive analysis of the system, see [Analysis Report](docs/analysis_report.md)
