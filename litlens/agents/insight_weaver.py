@@ -288,7 +288,7 @@ def self_criticize_synthesis(query: str, papers: List[Dict], synthesis: str) -> 
     
     return evaluation
 
-def synthesize_papers(papers: List[Dict], query: str, synthesis_type: str = "comprehensive", max_length: int = 1000, model_name: Optional[str] = None) -> Dict[str, Any]:
+def synthesize_papers(papers: List[Dict], query: str, synthesis_type: str = "comprehensive", max_length: int = 3000, model_name: Optional[str] = None) -> Dict[str, Any]:
     """Generate a synthesis of the papers that addresses the query.
     
     Args:
