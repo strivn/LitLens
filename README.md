@@ -13,6 +13,8 @@ LitLens is an intelligent research assistant system that leverages AI agents to 
 
 The main development use case currently is to be used in conjunction with Claude Desktop. It has not been tested with other MCP Clients. 
 
+[Short Video Demo](https://drive.google.com/file/d/1wHcbHLCp6EYEQTd4IW1-j1JVpytN1Fj_/view?usp=drive_link) 
+
 ![Example LitLens with Claude Desktop](assets/example_ss_1.png)
 
 ## Agents Role Summary
